@@ -1,0 +1,28 @@
+mission:
+  ros__parameters:
+    enable_control: false
+    latitude: 0.0
+    longitude: 0.0
+    relative_altitude: 5.0
+    delivery_marker_id: 0
+    home_marker_id: 1
+    radius: 5.0
+    spacing: 2.0
+    mission_timeout: 600.0
+    phase_timeout: 120.0
+    recovery_timeout: 180.0
+    min_battery: 0.3
+    max_distance: 200.0
+px4_adapter:
+  ros__parameters:
+    enable_control: false
+    telemetry_timeout: 2.0
+    target_system: 1
+vision:
+  ros__parameters:
+    calibrated: false
+    marker_size: 0.4
+payload:
+  ros__parameters:
+    backend: serial
+    port: /dev/serial/by-id/CONFIGURE_PAYLOAD

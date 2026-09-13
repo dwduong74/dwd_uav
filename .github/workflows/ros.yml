@@ -1,0 +1,9 @@
+name: ROS 2 Humble
+on: [push, pull_request]
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t delivery-test -f Dockerfile.test .
+      - run: docker run --rm -v "$PWD:/workspace" delivery-test bash scripts/test_container.sh

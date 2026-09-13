@@ -1,0 +1,9 @@
+float64 latitude
+float64 longitude
+float32 relative_altitude
+int32 delivery_marker_id
+int32 home_marker_id
+---
+delivery_interfaces/MissionStatus final_status
+---
+delivery_interfaces/MissionStatus status

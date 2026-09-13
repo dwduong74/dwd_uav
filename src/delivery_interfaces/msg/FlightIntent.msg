@@ -1,0 +1,9 @@
+uint8 NONE=0
+uint8 OFFBOARD=1
+uint8 ARM=2
+uint8 LAND=3
+std_msgs/Header header
+bool stream
+geometry_msgs/Point position
+uint64 command_id
+uint8 command

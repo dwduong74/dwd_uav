@@ -1,0 +1,8 @@
+unique_identifier_msgs/UUID mission_id
+---
+bool success
+bool released
+bool stowed
+string detail
+---
+string state

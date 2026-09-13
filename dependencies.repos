@@ -1,0 +1,6 @@
+repositories:
+  px4_msgs:
+    type: git
+    url: https://github.com/PX4/px4_msgs.git
+    # Verified release/1.15 snapshot; keep aligned with PX4 v1.15.4.
+    version: a1045ec4feb6d709bdecaf3895f1d5b43a5dabb8

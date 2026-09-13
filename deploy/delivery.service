@@ -1,0 +1,17 @@
+[Unit]
+Description=Drone delivery ROS 2 nodes (no automatic mission)
+After=network-online.target
+
+[Service]
+Type=simple
+User=uav
+SupplementaryGroups=dialout video
+WorkingDirectory=/home/uav/drone-delivery-ros2
+ExecStart=/bin/bash /home/uav/drone-delivery-ros2/scripts/run_pi.sh /etc/delivery/pi4.yaml
+# No automatic restart/resume after failure.
+Restart=no
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
