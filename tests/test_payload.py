@@ -32,3 +32,18 @@ class PayloadTests(unittest.TestCase):
         p=SimBackend(); p.release('a'*32,0); p.stop()
         self.assertTrue(p.update(2).fault)
         with self.assertRaises(ValueError): p.release('b'*32,3)
+
+    def test_grab_then_release(self):
+        p=SimBackend(present=False)
+        p.grab('a'*32,0.)
+        self.assertTrue(p.update(.6).present)
+        self.assertTrue(p.update(1.1).closed)
+        p.release('b'*32,2.)
+        self.assertFalse(p.update(2.6).present)
+        self.assertTrue(p.update(3.1).closed)
+
+    def test_grab_interlocks_and_deduplicates(self):
+        p=SimBackend(present=False)
+        p.grab('a'*32,0.); p.grab('a'*32,.1)
+        self.assertEqual(p.count,1)
+        with self.assertRaises(ValueError): p.release('b'*32,.2)

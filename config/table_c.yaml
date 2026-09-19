@@ -1,0 +1,48 @@
+# Một nguồn cấu hình duy nhất cho mission và sa hình Gazebo Bảng C.
+# Hệ tọa độ cục bộ ENU, đơn vị mét: [x Đông, y Bắc, z cao].
+courses:
+  table_c_demo:
+    origin: {latitude: 47.397971, longitude: 8.546163, altitude: 488.0}
+    geofence: [[-2, -3], [14, -3], [14, 3], [-2, 3]]
+    home: {marker_id: 1, position: [0, 0, 0]}
+
+    pickup_points:
+      - {name: package_1, marker_id: 20, mass_kg: 0.25, position: [0.0, -1.0, 0.0], destination: alpha}
+      - {name: package_2, marker_id: 21, mass_kg: 0.50, position: [0.0,  0.0, 0.0], destination: bravo}
+      - {name: package_3, marker_id: 22, mass_kg: 1.00, position: [0.0,  1.0, 0.0], destination: charlie}
+
+    delivery_points:
+      alpha:   {marker_id: 10, position: [12.0, -1.5, 0.0], flight_altitude: 2.0, route: [home, gate_1, gate_2, tunnel_in, tunnel_out, delivery_alpha]}
+      bravo:   {marker_id: 11, position: [12.0,  0.0, 0.0], flight_altitude: 2.0, route: [home, gate_1, gate_2, tunnel_in, tunnel_out, delivery_bravo]}
+      charlie: {marker_id: 12, position: [12.0,  1.5, 0.0], flight_altitude: 2.0, route: [home, gate_1, gate_2, tunnel_in, tunnel_out, delivery_charlie]}
+
+    route_nodes:
+      home: [0, 0, 2]
+      gate_1: [3, 0, 2]
+      gate_2: [6, 1, 2]
+      tunnel_in: [8, 0, 1.8]
+      tunnel_out: [11, 0, 1.8]
+      delivery_alpha: [12, -1.5, 2]
+      delivery_bravo: [12, 0, 2]
+      delivery_charlie: [12, 1.5, 2]
+    route_edges:
+      - [home, gate_1, 3.0]
+      - [gate_1, gate_2, 3.2]
+      - [gate_2, tunnel_in, 2.3]
+      - [tunnel_in, tunnel_out, 3.0]
+      - [tunnel_out, delivery_alpha, 1.8]
+      - [tunnel_out, delivery_bravo, 1.0]
+      - [tunnel_out, delivery_charlie, 1.8]
+
+    obstacles:
+      - {name: building_left_1, type: box, center: [1.5, -3.0, 2.0], size: [1.0, 2.0, 4.0]}
+      - {name: building_right_1, type: box, center: [1.5, 3.0, 2.0], size: [1.0, 2.0, 4.0]}
+      - {name: building_left_2, type: box, center: [4.5, -3.0, 2.0], size: [1.0, 2.0, 4.0]}
+      - {name: building_right_2, type: box, center: [4.5, 3.0, 2.0], size: [1.0, 2.0, 4.0]}
+      - {name: building_left_3, type: box, center: [7.5, -3.0, 2.0], size: [1.0, 2.0, 4.0]}
+      - {name: building_right_3, type: box, center: [7.5, 3.0, 2.0], size: [1.0, 2.0, 4.0]}
+      - {name: building_left_4, type: box, center: [10.5, -3.0, 2.0], size: [1.0, 2.0, 4.0]}
+      - {name: building_right_4, type: box, center: [10.5, 3.0, 2.0], size: [1.0, 2.0, 4.0]}
+      - {name: gate_1, type: gate, center: [3.0, 0.0, 2.0], opening_width: 2.0, opening_bottom: 1.0, opening_height: 2.0, thickness: 0.25}
+      - {name: gate_2, type: gate, center: [6.0, 1.0, 2.0], opening_width: 2.0, opening_bottom: 1.0, opening_height: 2.0, thickness: 0.25}
+      - {name: tunnel, type: tunnel, center: [9.5, 0.0, 1.5], size: [3.0, 3.0, 3.0], thickness: 0.15}

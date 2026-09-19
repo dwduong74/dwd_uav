@@ -2,5 +2,5 @@ repositories:
   px4_msgs:
     type: git
     url: https://github.com/PX4/px4_msgs.git
-    # Verified release/1.15 snapshot; keep aligned with PX4 v1.15.4.
-    version: a1045ec4feb6d709bdecaf3895f1d5b43a5dabb8
+    # release/1.17; adapter message definitions match the installed PX4 v1.17.0.
+    version: 86d8239e962f6939e05c3737784f60c02fa884db

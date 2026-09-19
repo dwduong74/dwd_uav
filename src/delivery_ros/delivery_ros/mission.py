@@ -42,7 +42,7 @@ class Mission(Node):
                          durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.pub = self.create_publisher(MissionStatus,'/delivery/mission_status',qos)
         self.legacy = self.create_publisher(String,'/delivery/state',10)
-        self.intent_pub = self.create_publisher(FlightIntent,'/delivery/flight_intent',1)
+        self.intent_pub = self.create_publisher(FlightIntent,'/delivery/flight_intent_raw',1)
         self.create_subscription(FlightState,'/delivery/flight_state',self.on_flight,10)
         self.create_subscription(PayloadState,'/delivery/payload_state',self.on_payload,10)
         self.create_subscription(Bool,'/delivery/vision_ready',self.on_camera,1)
@@ -80,6 +80,7 @@ class Mission(Node):
             t.armed,t.landed,t.offboard,t.auto_land,t.failsafe = f.armed,f.landed,f.offboard,f.auto_land,f.failsafe
             t.range_valid,t.agl,t.battery = f.range_valid,f.agl,f.battery_remaining
             t.command_id,t.command_state = f.command_id-self.offset,f.command_state
+            t.command_detail = f.detail
         if p:
             t.payload_healthy = p.healthy and not p.fault and time.monotonic()-self.payload_time < .5
             t.payload_closed,t.payload_present = p.closed,p.present
@@ -107,8 +108,9 @@ class Mission(Node):
         self.engine.markers.feed(msg.marker_id,time.monotonic()-age,(p.x,p.y,p.z),msg.reprojection_error)
 
     def accept(self,request):
+        route=tuple((p.x,p.y,p.z) for p in request.outbound_route)
         goal = Goal(request.latitude,request.longitude,request.relative_altitude,
-                    request.delivery_marker_id,request.home_marker_id)
+                    request.delivery_marker_id,request.home_marker_id,route)
         if self.reserved or not self.enabled or not goal.valid() or not self.telemetry().healthy:
             return GoalResponse.REJECT
         self.reserved = True
@@ -124,7 +126,8 @@ class Mission(Node):
         self.release_cancel_sent = False
         self.marker_stamps = {}
         r = handle.request
-        self.engine.start(Goal(r.latitude,r.longitude,r.relative_altitude,r.delivery_marker_id,r.home_marker_id),
+        route=tuple((p.x,p.y,p.z) for p in r.outbound_route)
+        self.engine.start(Goal(r.latitude,r.longitude,r.relative_altitude,r.delivery_marker_id,r.home_marker_id,route),
                           time.monotonic(),self.telemetry())
         handle.execute()
         self.publish_status()
@@ -235,6 +238,8 @@ class Mission(Node):
             i = self.engine.intent
             intent.stream = i.stream
             intent.position.x,intent.position.y,intent.position.z = i.position
+            intent.yaw_valid = False
+            intent.max_speed = float(self.engine.cfg.approach_speed)
             intent.command_id,intent.command = self.offset+i.command_id,i.command
             self.intent_pub.publish(intent)
         if self.engine.revision != self.last_revision or (self.engine.active and now-self.last_publish >= .5):

@@ -1,0 +1,11 @@
+uint8 GRAB=1
+uint8 RELEASE=2
+unique_identifier_msgs/UUID operation_id
+uint8 operation
+---
+bool success
+bool present
+bool stowed
+string detail
+---
+string state

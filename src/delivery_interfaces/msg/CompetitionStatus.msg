@@ -1,0 +1,23 @@
+uint8 IDLE=0
+uint8 SCAN_PACKAGE=1
+uint8 GRAB_PACKAGE=2
+uint8 DELIVER=3
+uint8 RETURNED=4
+uint8 HOLD=5
+uint8 FINISHED=6
+uint8 FAILED=7
+
+std_msgs/Header header
+unique_identifier_msgs/UUID run_id
+uint32 sequence
+uint8 state
+uint8 package_index
+uint8 package_count
+int32 package_marker_id
+int32 destination_marker_id
+uint8 completed_deliveries
+float32 progress
+builtin_interfaces/Duration elapsed
+uint16 error_code
+string detail
+delivery_interfaces/MissionStatus leg_status

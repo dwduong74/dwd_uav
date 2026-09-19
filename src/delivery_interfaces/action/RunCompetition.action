@@ -1,0 +1,6 @@
+string course_id
+uint8 package_count
+---
+delivery_interfaces/CompetitionStatus final_status
+---
+delivery_interfaces/CompetitionStatus status

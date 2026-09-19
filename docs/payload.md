@@ -9,13 +9,16 @@ USB serial 115200 baud, ASCII LF terminated, at most 160 bytes. Every frame is
 `TEXT*HHHH\n`, where HHHH is uppercase CRC-16/CCITT-FALSE (poly 0x1021,
 initial 0xffff) of TEXT. Host sends PING at 10 Hz.
 
-Commands: `PING`, `STOP`, `RELEASE <boot_counter> <32_lowercase_hex_mission_uuid>`.
+Commands: `PING`, `STOP`, `GRAB <boot_counter> <32_lowercase_hex_operation_uuid>`,
+`RELEASE <boot_counter> <32_lowercase_hex_operation_uuid>`.
 State: `STATE <boot_counter> <closed> <present> <busy> <fault> <last_uuid_or_dash>`.
 Boolean fields are exactly 0 or 1. The MCU publishes at 10 Hz.
 
-Release requires a current boot counter, recent heartbeat, closed switch,
-present sensor, no active motion/fault. The token is saved to EEPROM before
-motion. A repeated token reports current state without repeating movement.
+GRAB requires no package; RELEASE requires a present package. Both require a
+current boot counter, recent heartbeat, closed switch and no active motion/fault.
+The operation UUID is saved to EEPROM before motion. A repeated UUID reports
+current state without repeating movement; callers must never reuse a UUID for a
+different operation.
 After present becomes false, the servo stows and the closed switch confirms
 completion. Motion times out at 8 s; host action times out at 10 s. Missing
 heartbeat for 0.5 s or STOP detaches the servo and latches fault.

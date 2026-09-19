@@ -10,7 +10,11 @@ find_package(action_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MarkerDetection.msg" "msg/MissionStatus.msg" "msg/LandingTarget.msg"
   "msg/FlightIntent.msg" "msg/FlightState.msg" "msg/PayloadState.msg"
+  "msg/CompetitionStatus.msg" "msg/FiducialObservation.msg"
+  "msg/ObstacleState.msg" "msg/SafetyState.msg"
   "action/ExecuteDelivery.action" "action/ReleasePayload.action"
+  "action/RunCompetition.action" "action/OperatePayload.action"
+  "srv/CompetitionControl.srv"
   DEPENDENCIES std_msgs geometry_msgs unique_identifier_msgs builtin_interfaces action_msgs)
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()

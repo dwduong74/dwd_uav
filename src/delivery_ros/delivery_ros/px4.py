@@ -9,10 +9,16 @@ from sensor_msgs.msg import LaserScan
 from tf2_ros import TransformBroadcaster
 from px4_msgs.msg import (OffboardControlMode, TrajectorySetpoint, VehicleCommand,
     VehicleCommandAck, VehicleLocalPosition, VehicleStatus, VehicleLandDetected,
-    VehicleGlobalPosition, VehicleOdometry, SensorGps, BatteryStatus)
+    VehicleGlobalPosition, VehicleOdometry, SensorGps, BatteryStatus, EstimatorStatusFlags)
 from delivery_interfaces.msg import FlightState, FlightIntent
 from .geometry import enu_ned, px4_attitude_to_ros, rotate
 from .command import CommandTracker
+
+
+def px4_topic(base, message_type):
+    """PX4 appends _vN for nonzero MESSAGE_VERSION (since PX4 1.16)."""
+    version = getattr(message_type, 'MESSAGE_VERSION', 0)
+    return base + (f'_v{version}' if version else '')
 
 
 class Px4Adapter(Node):
@@ -21,6 +27,7 @@ class Px4Adapter(Node):
         self.enabled = self.declare_parameter('enable_control', False).value
         self.timeout = self.declare_parameter('telemetry_timeout', 2.).value
         self.system = self.declare_parameter('target_system', 1).value
+        self.allow_vio_without_gps = self.declare_parameter('allow_vio_without_gps',False).value
         self.component = 191
         self.range_source = self.declare_parameter('range_source','px4').value
         if self.range_source not in ('px4','ros_scan'):
@@ -34,17 +41,18 @@ class Px4Adapter(Node):
         self.intent_time = -math.inf
         self.tracker = CommandTracker()
         self.pub = self.create_publisher(FlightState, '/delivery/flight_state', 10)
-        self.mode_pub = self.create_publisher(OffboardControlMode, '/fmu/in/offboard_control_mode', 10)
-        self.sp_pub = self.create_publisher(TrajectorySetpoint, '/fmu/in/trajectory_setpoint', 10)
-        self.cmd_pub = self.create_publisher(VehicleCommand, '/fmu/in/vehicle_command', 10)
+        self.mode_pub = self.create_publisher(OffboardControlMode, px4_topic('/fmu/in/offboard_control_mode', OffboardControlMode), 10)
+        self.sp_pub = self.create_publisher(TrajectorySetpoint, px4_topic('/fmu/in/trajectory_setpoint', TrajectorySetpoint), 10)
+        self.cmd_pub = self.create_publisher(VehicleCommand, px4_topic('/fmu/in/vehicle_command', VehicleCommand), 10)
         self.tf = TransformBroadcaster(self)
         for key, cls in [('vehicle_local_position',VehicleLocalPosition),
                          ('vehicle_status',VehicleStatus), ('vehicle_land_detected',VehicleLandDetected),
                          ('vehicle_global_position',VehicleGlobalPosition), ('vehicle_odometry',VehicleOdometry),
-                         ('vehicle_gps_position',SensorGps), ('battery_status',BatteryStatus)]:
-            self.create_subscription(cls, '/fmu/out/'+key,
+                         ('vehicle_gps_position',SensorGps), ('battery_status',BatteryStatus),
+                         ('estimator_status_flags',EstimatorStatusFlags)]:
+            self.create_subscription(cls, px4_topic('/fmu/out/'+key, cls),
                                      lambda m,k=key: self.sample(k,m), qos_profile_sensor_data)
-        self.create_subscription(VehicleCommandAck, '/fmu/out/vehicle_command_ack', self.ack, qos_profile_sensor_data)
+        self.create_subscription(VehicleCommandAck, px4_topic('/fmu/out/vehicle_command_ack', VehicleCommandAck), self.ack, qos_profile_sensor_data)
         self.create_subscription(FlightIntent, '/delivery/flight_intent', self.on_intent, 1)
         self.create_timer(.05, self.tick)
 
@@ -60,7 +68,7 @@ class Px4Adapter(Node):
 
     def on_scan(self,msg):
         age=self.get_clock().now().nanoseconds/1e9-msg.header.stamp.sec-msg.header.stamp.nanosec/1e9
-        if 0 <= age < .2:
+        if 0 <= age < .5:
             self.scan,self.scan_time=msg,time.monotonic()
 
     def on_intent(self, msg):
@@ -76,7 +84,7 @@ class Px4Adapter(Node):
         out.header.stamp = self.get_clock().now().to_msg()
         out.header.frame_id = 'map'
         out.command_id, out.command_state, out.detail = self.tracker.token, self.tracker.state, self.tracker.detail
-        if len(self.data) != 7:
+        if len(self.data) != 8:
             out.detail = 'Waiting for PX4 DDS topics (including vehicle_land_detected)'
             return out
         p, s = self.data['vehicle_local_position'], self.data['vehicle_status']
@@ -98,7 +106,7 @@ class Px4Adapter(Node):
         if self.range_source == 'ros_scan':
             scan=self.scan
             out.range_valid=False
-            if scan and time.monotonic()-self.scan_time<.2 and len(scan.ranges)==1:
+            if scan and time.monotonic()-self.scan_time<.5 and len(scan.ranges)==1:
                 r=scan.ranges[0]
                 odom=self.data['vehicle_odometry']
                 try:
@@ -108,9 +116,12 @@ class Px4Adapter(Node):
                     out.agl=float(r*cosine)
                 except ValueError:
                     pass
+        gps_ok = gps.fix_type >= 3 or self.allow_vio_without_gps
         out.healthy = bool(all(time.monotonic()-v < self.timeout for v in self.received.values())
             and p.xy_valid and p.z_valid and p.xy_global and p.z_global and not p.dead_reckoning
-            and p.heading_good_for_control and gps.fix_type >= 3 and b.connected
+            # In 1.17 heading_good_for_control requires final in-flight mag alignment.
+            # We send no yaw setpoint; require initial EKF yaw alignment before takeoff.
+            and self.data['estimator_status_flags'].cs_yaw_align and gps_ok and b.connected
             and all(math.isfinite(v) for v in (p.x,p.y,p.z,g.lat,g.lon,p.ref_lat,p.ref_lon,p.ref_alt,b.remaining))
             and 0 <= b.remaining <= 1)
         return out
@@ -147,7 +158,8 @@ class Px4Adapter(Node):
             sp.timestamp = us
             sp.position = list(enu_ned((intent.position.x,intent.position.y,intent.position.z)))
             sp.velocity = sp.acceleration = sp.jerk = [math.nan]*3
-            sp.yaw = sp.yawspeed = math.nan
+            sp.yaw = float(-intent.yaw+math.pi/2) if intent.yaw_valid and math.isfinite(intent.yaw) else math.nan
+            sp.yawspeed = math.nan
             mode = OffboardControlMode()
             mode.timestamp, mode.position = us,True
             self.mode_pub.publish(mode)
@@ -156,7 +168,10 @@ class Px4Adapter(Node):
             command = {1:VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
                        2:VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
                        3:VehicleCommand.VEHICLE_CMD_NAV_LAND}.get(intent.command)
-            if command and self.tracker.begin(intent.command_id,intent.command,command,now,us):
+            # ACK timestamps use PX4's synchronized clock, which may lag wall time.
+            # Reject ACKs older than the latest PX4 telemetry at transaction start.
+            ack_floor = max((int(msg.timestamp) for msg in self.data.values()), default=us)
+            if command and self.tracker.begin(intent.command_id,intent.command,command,now,ack_floor):
                 msg = VehicleCommand()
                 msg.timestamp, msg.command = us, command
                 msg.target_system, msg.target_component = self.system,1

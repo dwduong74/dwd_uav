@@ -1,6 +1,10 @@
-# PX4 1.15.4 + Gazebo Harmonic
+# PX4 1.17.0 + Gazebo Harmonic
 
-Prerequisites: Ubuntu 22.04, ROS 2 Humble, PX4 v1.15.4 with submodules and its
+On the configured local machine, `bash scripts/run_native.sh sim` starts Gazebo,
+PX4, the Humble-compatible Agent v2.4.2 and the ROS stack together. See
+[local setup](setup_this_machine.md). No goal is sent automatically.
+
+Prerequisites: Ubuntu 22.04, ROS 2 Humble, PX4 v1.17.0 with submodules and its
 Gazebo build dependencies, Micro XRCE-DDS Agent v2.4.2, a working GPU/software
 renderer. Install the Humble bridge built for **Harmonic**, not the default
 Fortress bridge; follow the ROS/Gazebo compatibility instructions for that pairing.
@@ -24,14 +28,16 @@ Three terminals, with ROS/workspace sourced where needed:
 ```bash
 bash scripts/run_sitl.sh /path/PX4-Autopilot "$PWD/build/sitl_assets"
 MicroXRCEAgent udp4 -p 8888
-ros2 launch delivery_ros sitl.launch.py config:="$PWD/build/sitl_assets/sitl.yaml"
+GZ_PARTITION=dwd_uav_native ros2 launch delivery_ros sitl.launch.py config:="$PWD/build/sitl_assets/sitl.yaml"
 ```
 
 Keep QGroundControl connected. Set and verify the PX4 Offboard-loss behavior,
 RC policy and auto-disarm-on-land before starting. Do not remove arming checks
 to hide an incomplete simulation configuration. The companion does not force disarm.
 
-The camera bridge uses wall-time image stamps to match ROS/PX4 time sync;
+The generated camera is 320x240 at 10 Hz to reduce native rendering/bridge load.
+The sim_camera_clock relay maps Gazebo acquisition stamps using PX4 DDS
+TimesyncStatus (negative estimated_offset), matching odometry rather than receipt time;
 all nodes use wall time. Gazebo must run close to real time. Pause/slowdown will
 exercise watchdogs rather than pause mission timeouts. Check `gz_frame_id` is
 `camera_optical_frame` on both Image and CameraInfo with the installed bridge.

@@ -29,13 +29,15 @@ class Goal:
     relative_altitude: float
     delivery_marker_id: int
     home_marker_id: int
+    outbound_route: tuple = ()
 
     def valid(self):
         return (all(math.isfinite(v) for v in (self.latitude, self.longitude, self.relative_altitude))
                 and abs(self.latitude) < 85 and abs(self.longitude) <= 180
                 and 1 <= self.relative_altitude <= 30
                 and 0 <= self.delivery_marker_id < 250 and 0 <= self.home_marker_id < 250
-                and self.delivery_marker_id != self.home_marker_id)
+                and self.delivery_marker_id != self.home_marker_id
+                and all(len(p) == 3 and all(math.isfinite(v) for v in p) for p in self.outbound_route))
 
 
 @dataclass
@@ -57,6 +59,7 @@ class Telemetry:
     battery: float = 0.
     command_id: int = 0
     command_state: int = 0
+    command_detail: str = ''
     payload_healthy: bool = False
     payload_present: bool = False
     payload_closed: bool = False
@@ -141,7 +144,10 @@ class Engine:
         self.substage = 0
         self.path = []
         self.path_index = 0
+        self.transit_path = []
+        self.transit_index = 0
         self.release_requested = False
+        self.yaw_alignment_reset_accepted = False
 
     @property
     def active(self):
@@ -181,11 +187,26 @@ class Engine:
         self.intent.position = t.position
         self.cruise_z = t.position[2]+goal.relative_altitude
         self.destination = (*project_enu(goal.latitude, goal.longitude, t.ref_latitude, t.ref_longitude), self.cruise_z)
+        self.outbound_route = [(float(p[0]), float(p[1]), float(p[2])) for p in goal.outbound_route]
+        if not self.outbound_route or distance(self.outbound_route[-1], self.destination) > self.cfg.waypoint_tolerance:
+            self.outbound_route.append(self.destination)
         self.change(Phase.PREFLIGHT, now)
-        if (not t.healthy or not t.camera_ready or not t.range_valid or t.armed or not t.landed or not t.payload_healthy
-                or not t.payload_present or not t.payload_closed or t.battery < self.cfg.min_battery
-                or distance(self.destination[:2], self.home[:2]) > self.cfg.max_distance):
-            self.finish(Execution.FAILED, now, Error.PREFLIGHT_FAILED)
+        failures = [reason for failed, reason in (
+            (not t.healthy, 'flight telemetry unhealthy or stale'),
+            (not t.camera_ready, 'camera/TF not ready or stale'),
+            (not t.range_valid, 'range invalid'),
+            (t.armed, 'vehicle already armed'),
+            (not t.landed, 'vehicle not landed'),
+            (not t.payload_healthy, 'payload unhealthy or stale'),
+            (not t.payload_present, 'payload missing'),
+            (not t.payload_closed, 'gripper not closed'),
+            (t.battery < self.cfg.min_battery, f'battery below {self.cfg.min_battery:.2f}'),
+            (distance(self.destination[:2], self.home[:2]) > self.cfg.max_distance,
+             f'destination farther than {self.cfg.max_distance:.1f} m'),
+        ) if failed]
+        if failures:
+            self.finish(Execution.FAILED, now, Error.PREFLIGHT_FAILED,
+                        'PREFLIGHT_FAILED: ' + '; '.join(failures))
         return True
 
     def cancel(self):
@@ -207,6 +228,8 @@ class Engine:
         self.recovery_started = now
         self.returning = True
         self.intent.position = t.position
+        self.transit_path = list(reversed(self.outbound_route[:-1])) + [self.home]
+        self.transit_index = 0
         self.change(Phase.RETURN_TAKEOFF, now, 'Climb for return: '+error.name)
 
     def tick(self, now, t):
@@ -219,13 +242,26 @@ class Engine:
             self.finish(Execution.FAILED, now, Error.TELEMETRY_LOST)
             return
         if t.reset != self.origin_reset:
-            self.finish(Execution.FAILED, now, Error.ESTIMATOR_RESET)
-            return
+            expected_yaw_alignment = (not self.yaw_alignment_reset_accepted and t.armed
+                and (self.phase == Phase.TAKEOFF
+                     or (self.phase == Phase.TRANSIT and now-self.phase_started <= 2.))
+                and t.reset[:3] == self.origin_reset[:3]
+                and t.reset[3] == self.origin_reset[3]+1)
+            if expected_yaw_alignment:
+                # PX4 1.17 completes final yaw alignment after the first arm.
+                # No yaw setpoint is commanded, so retain the position frame.
+                self.origin_reset = t.reset
+                self.yaw_alignment_reset_accepted = True
+            else:
+                self.finish(Execution.FAILED, now, Error.ESTIMATOR_RESET,
+                            f'ESTIMATOR_RESET: {self.origin_reset} -> {t.reset}')
+                return
         if t.failsafe:
             self.finish(Execution.FAILED, now, Error.OPERATOR_TAKEOVER, 'PX4 failsafe active')
             return
         if t.command_id == self.intent.command_id and t.command_state == 3 and self.intent.command:
-            self.finish(Execution.FAILED, now, Error.COMMAND_FAILED)
+            self.finish(Execution.FAILED, now, Error.COMMAND_FAILED,
+                        'COMMAND_FAILED: '+(t.command_detail or 'ACK/state not confirmed'))
             return
         ground = t.landed and not t.armed
         self.ground_since = (self.ground_since if self.ground_since is not None else now) if ground else None
@@ -296,11 +332,17 @@ class Engine:
             target = (self.intent.position[0], self.intent.position[1], self.cruise_z)
             self.intent.position = step_toward(self.intent.position, target, dt)
             if distance(t.position, target) < self.cfg.waypoint_tolerance:
+                self.transit_path = ((list(reversed(self.outbound_route[:-1])) + [self.home])
+                                     if self.returning else list(self.outbound_route))
+                self.transit_index = 0
                 self.change(Phase.RETURN_TRANSIT if self.returning else Phase.TRANSIT, now)
         elif self.phase in (Phase.TRANSIT, Phase.RETURN_TRANSIT):
-            target = (*self.home[:2], self.cruise_z) if self.returning else self.destination
+            target = self.transit_path[min(self.transit_index, len(self.transit_path)-1)]
             self.intent.position = step_toward(self.intent.position, target, dt)
             if distance(t.position, target) < self.cfg.waypoint_tolerance:
+                self.transit_index += 1
+                if self.transit_index < len(self.transit_path):
+                    return
                 if self.returning and self.recovery_started is not None:
                     self.change(Phase.RETURN_LAND, now, 'Recovery landing at launch')
                 else:
@@ -357,14 +399,23 @@ class Engine:
                 self.release_requested = True
 
     def _preflight(self, now, t):
-        if not t.camera_ready or not t.range_valid or not t.payload_healthy or not t.payload_closed or (self.returning and t.payload_present):
-            self.finish(Execution.FAILED, now, Error.PREFLIGHT_FAILED)
+        failures = [reason for failed, reason in (
+            (not t.camera_ready, 'camera/TF not ready or stale during countdown'),
+            (not t.range_valid, 'range invalid during countdown'),
+            (not t.payload_healthy, 'payload unhealthy or stale during countdown'),
+            (not t.payload_closed, 'gripper not closed during countdown'),
+            (self.returning and t.payload_present, 'payload still present on return'),
+        ) if failed]
+        if failures:
+            self.finish(Execution.FAILED, now, Error.PREFLIGHT_FAILED,
+                        'PREFLIGHT_FAILED: ' + '; '.join(failures))
             return
         self.intent.stream = True
         delay = 5. if self.returning else 2.
         if self.substage == 0 and now-self.phase_started >= delay:
             if t.armed or not t.landed:
-                self.finish(Execution.FAILED, now, Error.PREFLIGHT_FAILED)
+                self.finish(Execution.FAILED, now, Error.PREFLIGHT_FAILED,
+                            'PREFLIGHT_FAILED: vehicle already armed or not landed before offboard')
                 return
             self.command(1)
             self.substage = 1

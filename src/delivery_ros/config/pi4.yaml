@@ -26,3 +26,18 @@ payload:
   ros__parameters:
     backend: serial
     port: /dev/serial/by-id/CONFIGURE_PAYLOAD
+competition:
+  ros__parameters:
+    enable_control: false
+    course_id: table_c_demo
+    scan_timeout: 30.0
+safety_monitor:
+  ros__parameters:
+    enable_obstacle_guard: true
+    require_obstacle_data: true
+    obstacle_clearance: 0.6
+    geofence_xy: [-2.0, -3.0, 14.0, -3.0, 14.0, 3.0, -2.0, 3.0]
+vio_bridge:
+  ros__parameters:
+    enabled: true
+    min_quality: 50

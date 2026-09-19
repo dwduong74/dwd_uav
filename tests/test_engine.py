@@ -137,6 +137,26 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(s.e.error,error)
             self.assertFalse(s.e.intent.stream)
 
+    def test_first_takeoff_accepts_only_expected_yaw_alignment_reset(self):
+        s=Simulation(); s.until(Phase.TAKEOFF)
+        s.t.reset=(1,0,0,1)
+        s.e.tick(s.now+.05,s.t)
+        self.assertEqual(s.e.execution,Execution.RUNNING)
+        self.assertEqual(s.e.origin_reset,(1,0,0,1))
+        s.t.reset=(1,0,0,2)
+        s.e.tick(s.now+.075,s.t)
+        self.assertEqual(s.e.error,Error.ESTIMATOR_RESET)
+
+    def test_transit_accepts_late_first_yaw_alignment_reset(self):
+        s=Simulation(); s.until(Phase.TRANSIT)
+        s.t.reset=(1,0,0,1)
+        s.e.tick(s.now+.05,s.t)
+        self.assertEqual(s.e.execution,Execution.RUNNING)
+        self.assertTrue(s.e.yaw_alignment_reset_accepted)
+        s.t.reset=(1,0,1,1)
+        s.e.tick(s.now+.1,s.t)
+        self.assertEqual(s.e.error,Error.ESTIMATOR_RESET)
+
     def test_release_result_survives_return_failure(self):
         s=Simulation(); s.until(Phase.RETURN_PREFLIGHT)
         s.t.healthy=False
@@ -157,7 +177,20 @@ class EngineTests(unittest.TestCase):
             t=ready(); setattr(t,field,False)
             e=Engine(); e.start(Goal(10,106,2,0,1),0,t)
             self.assertEqual(e.error,Error.PREFLIGHT_FAILED)
+            self.assertIn('camera/TF' if field=='camera_ready' else 'range invalid',e.detail)
             self.assertEqual(e.progress,0.)
+
+    def test_preflight_countdown_reports_lost_readiness(self):
+        for field, reason in [('camera_ready', 'camera/TF'), ('range_valid', 'range invalid'),
+                              ('payload_healthy', 'payload unhealthy'), ('payload_closed', 'gripper')]:
+            t = ready()
+            e = Engine()
+            e.start(Goal(10,106,2,0,1),0,t)
+            setattr(t, field, False)
+            e.tick(.1, t)
+            self.assertEqual(e.error, Error.PREFLIGHT_FAILED)
+            self.assertIn(reason, e.detail)
+            self.assertEqual(e.intent.command, 0)
 
     def test_cancel_pending_arm_does_not_complete_early(self):
         s=Simulation()

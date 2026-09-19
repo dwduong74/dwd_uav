@@ -1,0 +1,25 @@
+# Local node startup without a camera, flight controller or payload MCU.
+mission:
+  ros__parameters:
+    enable_control: false
+px4_adapter:
+  ros__parameters:
+    enable_control: false
+vision:
+  ros__parameters:
+    calibrated: false
+    marker_size: 0.4
+payload:
+  ros__parameters:
+    backend: sim
+competition:
+  ros__parameters:
+    enable_control: false
+    course_id: table_c_demo
+safety_monitor:
+  ros__parameters:
+    enable_obstacle_guard: false
+    require_obstacle_data: false
+vio_bridge:
+  ros__parameters:
+    enabled: false

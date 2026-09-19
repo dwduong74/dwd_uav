@@ -1,0 +1,9 @@
+uint8 OK=0
+uint8 HOLD=1
+uint8 RTL=2
+uint8 LAND=3
+uint8 TAKEOVER=4
+std_msgs/Header header
+uint8 state
+bool intent_allowed
+string detail

@@ -1,12 +1,90 @@
-# Drone Delivery — Hướng dẫn setup ROS 2 Humble, PX4 và Raspberry Pi 4
+# dwd_uav — ROS 2 Humble, PX4 v1.17 và Gazebo
 
 Repo triển khai giao hàng khứ hồi bằng ROS 2 Action: **cất cánh → tới GPS → tìm
 ArUco → đáp → nhả hàng → cất cánh lại → quay về → đáp**. Pi 4 là máy tính đồng
 hành; flight controller riêng chạy PX4 và điều khiển động cơ bay.
 
-**Đã kiểm chứng:** build ROS 2 Humble trong container, 33/33 kiểm thử đạt.
-**Chưa nghiệm thu:** PX4/Gazebo đầu-cuối, firmware trên cơ cấu thật và benchmark
-Pi 4. Xem [báo cáo kiểm chứng](docs/validation.md) trước khi thử phần cứng.
+Trên máy phát triển đã cấu hình, xem [hướng dẫn riêng cho máy này](docs/setup_this_machine.md).
+`bash scripts/run_native.sh sim` mở bài giao một kiện; `table-c` mở sa hình ba kiện;
+`demo` chỉ chạy các node ROS.
+
+**Đã kiểm chứng:** build native ROS 2 Humble với PX4 v1.17, 44/44 kiểm thử đạt;
+Gazebo mở, ROS nhận telemetry/camera/TF/range hợp lệ, và UAV hạ tại pad B với
+sai số ground truth 0,021 m rồi nhả payload.
+**Chưa nghiệm thu:** chuyến bay ba kiện liên tiếp, firmware trên cơ cấu thật và
+benchmark Pi 4. Xem [báo cáo kiểm chứng](docs/validation.md) trước khi thử phần cứng.
+
+## Bắt đầu nhanh trên máy đã cài dependency
+
+```bash
+cd /home/dwduong74/drone/src/dwd_uav
+bash scripts/run_native.sh build
+bash scripts/run_native.sh test
+bash scripts/run_native.sh table-c
+```
+
+Giữ terminal mô phỏng chạy. Trong terminal thứ hai, source môi trường rồi gửi
+mission theo phần dưới. Máy mới cần làm các bước cài ROS/PX4/Gazebo ở mục 4–6
+trước khi chạy `build`. Script `deps` cài Agent và build `px4_msgs` đã khóa phiên bản.
+
+## Chạy bài thi Bảng C ba kiện
+
+Chế độ này sinh sa hình gồm bốn dãy nhà, hai cổng lệch nhau, hầm 3×3×3 m,
+ba bệ giao và scanner trạm gắp mô phỏng. Giữ terminal đầu chạy:
+
+```bash
+cd /home/dwduong74/drone/src/dwd_uav
+bash scripts/run_native.sh table-c
+```
+
+Sau khi PX4 báo sẵn sàng, mở terminal thứ hai:
+
+```bash
+cd /home/dwduong74/drone/src/dwd_uav
+source scripts/env_native.sh
+export ROS_DOMAIN_ID=74 ROS_LOCALHOST_ONLY=0
+ros2 topic echo /delivery/flight_state --once
+ros2 topic echo /delivery/vision_ready --once
+ros2 topic echo /delivery/payload_state --once
+ros2 service call /competition/start std_srvs/srv/Trigger '{}'
+ros2 topic echo /competition/status
+```
+
+Chỉ gửi `/competition/start` khi `flight_state.healthy`, `vision_ready.data`,
+`payload_state.healthy` và `payload_state.grab_ready` đều là `true`.
+Service trả `success=true` nghĩa là goal đã được gửi; kết quả cuối nằm ở
+`/competition/status`. `state`: `1=SCAN_PACKAGE`, `2=GRAB_PACKAGE`,
+`3=DELIVER`, `5=HOLD`, `6=FINISHED`, `7=FAILED`.
+
+Điều khiển giám sát dùng `1=PAUSE`, `2=RESUME`, `3=RTL`, `4=LAND`,
+`5=ABORT_SAFE`:
+
+```bash
+ros2 service call /competition/control \
+    delivery_interfaces/srv/CompetitionControl '{command: 1}'
+```
+
+Toàn bộ gốc GPS, ba điểm gắp, ba điểm trả, marker, tuyến, geofence và vật cản
+nằm trong một file `config/table_c.yaml`. Tọa độ sa hình dùng ENU theo mét:
+`[x Đông, y Bắc, z cao]`. `position` của điểm trả tự được đổi sang GPS; không
+cần nhập lại latitude/longitude.
+
+Có thể sao chép file này, sửa cấu hình và chạy bản riêng:
+
+```bash
+cp config/table_c.yaml config/my_course.yaml
+bash scripts/run_native.sh table-c config/my_course.yaml
+```
+
+Các `route_nodes` phải nằm trong `geofence`; marker phải duy nhất. Vật cản hỗ
+trợ `type: box`, `type: gate` và `type: tunnel`. Cả Gazebo lẫn supervisor đọc
+cùng file được truyền vào, nên tọa độ mô phỏng và tọa độ mission luôn đồng bộ.
+Trên phần cứng, thay scanner mô phỏng bằng camera xuất `/delivery/fiducials` và giữ
+`sim_package_station` tắt. Công tắc kill động cơ phải cấu hình trực tiếp trên
+RC/PX4, không đi qua ROS.
+
+Mô phỏng đã xác nhận khởi động stack, quét/gắp giả lập và vào chặng bay đầu.
+Chưa đạt tiêu chí nghiệm thu ba kiện liên tiếp; xem [validation](docs/validation.md).
 
 ## Mục lục
 
@@ -36,8 +114,8 @@ Pi 4. Xem [báo cáo kiểm chứng](docs/validation.md) trước khi thử ph�
 | Máy phát triển native | Ubuntu 22.04 amd64 |
 | Raspberry Pi 4 | Ubuntu Server 22.04 **arm64**, nguồn đủ tải và tản nhiệt |
 | ROS | ROS 2 Humble; Python 3 hệ thống Ubuntu |
-| PX4 | **v1.15.4**, có bổ sung DDS topic land detector |
-| `px4_msgs` | Commit `a1045ec4feb6d709bdecaf3895f1d5b43a5dabb8` từ `release/1.15` |
+| PX4 | **v1.17.0**, có bổ sung DDS topic land detector |
+| `px4_msgs` | Commit `86d8239e962f6939e05c3737784f60c02fa884db` từ `release/1.17` |
 | Micro XRCE-DDS Agent | **v2.4.2** |
 | Mô phỏng của repo | Gazebo Harmonic + bridge Humble tương ứng, chạy trên PC |
 | Camera | USB UVC hướng xuống hoặc driver tương đương xuất Image + CameraInfo |
@@ -48,21 +126,25 @@ bay được build trên máy phát triển rồi nạp lên flight controller.
 
 ## 2. Chuẩn bị mã nguồn
 
-Repo hiện ở workspace local, chưa cấu hình Git remote. Sao chép thư mục
-`drone-delivery-ros2` sang máy Ubuntu/Pi; bỏ các thư mục sinh ra `build`, `install`,
-`log`, `__pycache__`. Giữ `src`, `scripts`, `tests`, cấu hình và các file ở root.
-Không mang `install` được build trên amd64 sang Pi arm64.
+Clone repo từ GitHub hoặc sao chép mã nguồn; không sao chép các thư mục sinh ra
+`build`, `install`, `log`, `__pycache__` giữa các máy. Đặc biệt, không dùng bản
+`install` build trên amd64 cho Pi arm64.
+
+```bash
+git clone https://github.com/dwduong74/dwd_uav.git
+cd dwd_uav
+```
 
 Các lệnh Bash bên dưới giả sử thư mục nằm tại:
 
 ```bash
-cd "$HOME/drone-delivery-ros2"
+cd "$HOME/dwd_uav"
 ```
 
 Nếu dùng WSL với workspace Windows hiện tại, có thể vào trực tiếp:
 
 ```bash
-cd /mnt/c/project/UAV_HCM/drone-delivery-ros2
+cd /mnt/c/project/UAV_HCM/dwd_uav
 ```
 
 Giữ đường dẫn thực tế của bạn trong các terminal. Trên WSL, build trong filesystem
@@ -80,7 +162,7 @@ docker run --rm -v "$PWD:/workspace" delivery-test bash scripts/test_container.s
 ```
 
 Kết quả mong đợi: hai package `delivery_interfaces`, `delivery_ros` build thành
-công và cuối log có `Ran 33 tests ... OK`. Build đầu tải image và biên dịch
+công và cuối log có `Ran 44 tests ... OK`. Build đầu tải image và biên dịch
 `px4_msgs`, có thể mất nhiều phút.
 
 Container dùng `build/container`, `install/container` và `log/container`.
@@ -169,7 +251,7 @@ python3 -m unittest discover -s tests -v
 Thực hiện trước mọi lệnh ROS của repo:
 
 ```bash
-cd "$HOME/drone-delivery-ros2"  # thay bằng đường dẫn repo thực tế
+cd "$HOME/dwd_uav"  # thay bằng đường dẫn repo thực tế
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=0
@@ -218,10 +300,10 @@ kết nối. Agent không tự khởi động mission.
 ```bash
 mkdir -p "$HOME/uav-tools"
 cd "$HOME/uav-tools"
-git clone --branch v1.15.4 --recursive https://github.com/PX4/PX4-Autopilot.git
+git clone --branch v1.17.0 --recursive https://github.com/PX4/PX4-Autopilot.git
 ```
 
-Cài toolchain theo [PX4 Ubuntu development environment](https://docs.px4.io/v1.15/en/dev_setup/dev_env_linux_ubuntu).
+Cài toolchain theo [PX4 Ubuntu development environment](https://docs.px4.io/v1.17/en/dev_setup/dev_env_linux_ubuntu).
 Vì repo chọn Harmonic, bỏ phần simulator của script PX4 để cài Gazebo riêng:
 
 ```bash
@@ -236,13 +318,14 @@ Khởi động lại nếu trình cài yêu cầu. Trên máy chỉ dùng SITL c
 Trở về repo, chạy:
 
 ```bash
-cd "$HOME/drone-delivery-ros2"
+cd "$HOME/dwd_uav"
 python3 scripts/enable_land_topic.py "$HOME/uav-tools/PX4-Autopilot"
 ```
 
-Script bổ sung `/fmu/out/vehicle_land_detected` vào `dds_topics.yaml` của checkout
-PX4. **Phải build lại firmware/SITL sau bước này.** Firmware tải sẵn chưa có topic
-này sẽ khiến adapter chờ telemetry, dù một số topic khác đã xuất hiện.
+PX4 v1.17 đã xuất bản `/fmu/out/vehicle_land_detected` mặc định. Script kiểm tra
+và bổ sung topic nếu checkout đã tùy chỉnh làm thiếu nó; chỉ phải build lại khi
+`dds_topics.yaml` thay đổi. Adapter tự thêm hậu tố `_vN` theo `MESSAGE_VERSION`,
+ví dụ `/fmu/out/vehicle_status_v1` và `/fmu/out/battery_status_v1`.
 
 Đối với flight controller thật, build target đúng model board và nạp file `.px4`
 tương ứng qua QGroundControl. Repo chưa chốt model FC nên không có lệnh flash
@@ -267,7 +350,7 @@ Phần Gazebo đầu-cuối của repo vẫn đang chờ kiểm chứng thực t
 ```bash
 cd "$HOME/uav-tools/PX4-Autopilot"
 make px4_sitl
-cd "$HOME/drone-delivery-ros2"
+cd "$HOME/dwd_uav"
 python3 scripts/prepare_sitl.py "$HOME/uav-tools/PX4-Autopilot"
 ```
 
@@ -292,7 +375,7 @@ bash scripts/run_sitl.sh "$HOME/uav-tools/PX4-Autopilot" "$PWD/build/sitl_assets
 **Terminal C — đã source ROS và workspace theo mục 4.5:**
 
 ```bash
-ros2 launch delivery_ros sitl.launch.py config:="$PWD/build/sitl_assets/sitl.yaml"
+GZ_PARTITION=dwd_uav_native ros2 launch delivery_ros sitl.launch.py config:="$PWD/build/sitl_assets/sitl.yaml"
 ```
 
 Mở QGroundControl, chờ GPS/estimator sẵn sàng. Xem mục 9 để kiểm tra trạng thái
@@ -447,7 +530,8 @@ ros2 launch delivery_ros delivery.launch.py \
   image_topic:=/image_raw camera_info_topic:=/camera_info
 ```
 
-Launch khởi động bốn node `mission`, `px4_adapter`, `vision`, `payload`; không tự
+Launch khởi động các node `mission`, `px4_adapter`, `vision`, `payload`,
+`competition`, `safety_monitor` và `vio_bridge`; không tự
 chạy Agent hoặc camera driver, và không tự bắt đầu nhiệm vụ khi boot.
 
 Sau khi chạy thủ công ổn định mới dùng [service mẫu](deploy/delivery.service):
@@ -481,13 +565,84 @@ ros2 service call /delivery/start std_srvs/srv/Trigger '{}'
 Service chỉ xác nhận **đã gửi yêu cầu**. Chấp nhận và kết quả thực tế được phản
 ánh qua topic/action. Với SITL, lệnh này dùng GPS từ `build/sitl_assets/sitl.yaml`.
 
+Trong mô phỏng được tạo bởi `run_native.sh sim`, điểm A là vị trí UAV khi nhận
+goal; điểm B là pad ArUco `0` cách A 3 m theo hướng Đông và độ cao hành trình là
+2 m. Chuỗi điều khiển tới B là `PREFLIGHT → TAKEOFF → TRANSIT → SEARCH →
+APPROACH → DESCEND → LAND → RELEASE`.
+
+#### Vì sao service chỉ gửi goal
+
+Bay A → B là tác vụ dài, cần feedback, hủy và kết quả cuối nên phần thực thi là
+ROS 2 Action `/delivery/execute`. Service `/delivery/start` dùng `Trigger` chỉ làm
+cổng khởi động: tạo `ExecuteDelivery.Goal`, gọi `send_goal_async()` rồi trả về
+ngay. Không giữ callback service cho tới lúc UAV hạ cánh.
+
+Luồng giao tiếp:
+
+```text
+/delivery/start (std_srvs/Trigger)
+        │ gửi goal mặc định
+        ▼
+/delivery/execute (ExecuteDelivery action)
+        │ feedback/result
+        └──► /delivery/mission_status (MissionStatus)
+```
+
+Mẫu callback tối thiểu:
+
+```python
+from rclpy.action import ActionClient
+from std_srvs.srv import Trigger
+from delivery_interfaces.action import ExecuteDelivery
+
+self.client = ActionClient(self, ExecuteDelivery, '/delivery/execute')
+self.start_srv = self.create_service(Trigger, '/delivery/start', self.start)
+
+def start(self, request, response):
+    if not self.client.server_is_ready():
+        response.success = False
+        response.message = 'Mission action server chưa sẵn sàng'
+        return response
+
+    goal = ExecuteDelivery.Goal()
+    goal.latitude = 47.397971057728974
+    goal.longitude = 8.546203597337506
+    goal.relative_altitude = 2.0
+    goal.delivery_marker_id = 0
+    goal.home_marker_id = 1
+    self.client.send_goal_async(goal, feedback_callback=self.on_feedback)
+
+    response.success = True
+    response.message = 'Goal đã gửi; theo dõi /delivery/mission_status'
+    return response
+```
+
+Code đang chạy nằm trong
+[`src/delivery_ros/delivery_ros/mission.py`](src/delivery_ros/delivery_ros/mission.py).
+Nếu cần truyền tọa độ qua service thay vì action trực tiếp, tạo
+`StartDelivery.srv`:
+
+```text
+float64 latitude
+float64 longitude
+float32 relative_altitude
+int32 delivery_marker_id
+int32 home_marker_id
+---
+bool accepted
+string message
+```
+
+Callback của service tùy biến vẫn chỉ chuyển các trường request thành
+`ExecuteDelivery.Goal`; state machine bay không nên đặt trong callback service.
+
 ### 9.3. Gửi action trực tiếp với feedback
 
 Ví dụ cú pháp — thay GPS bằng điểm thử đã chuẩn bị, không dùng nguyên tọa độ mẫu:
 
 ```bash
 ros2 action send_goal /delivery/execute delivery_interfaces/action/ExecuteDelivery \
-  '{latitude: 10.0, longitude: 106.0, relative_altitude: 5.0, delivery_marker_id: 0, home_marker_id: 1}' \
+  '{latitude: 47.397971057728974, longitude: 8.546203597337506, relative_altitude: 2.0, delivery_marker_id: 0, home_marker_id: 1}' \
   --feedback
 ```
 

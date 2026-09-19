@@ -5,5 +5,8 @@ uint8 LAND=3
 std_msgs/Header header
 bool stream
 geometry_msgs/Point position
+bool yaw_valid
+float32 yaw
+float32 max_speed
 uint64 command_id
 uint8 command

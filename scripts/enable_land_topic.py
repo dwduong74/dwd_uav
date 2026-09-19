@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the required land detector publication to a PX4 1.15 checkout."""
+"""Verify/add the land detector publication (already present in PX4 1.17)."""
 import argparse
 from pathlib import Path
 

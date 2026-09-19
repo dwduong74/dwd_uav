@@ -5,4 +5,5 @@ bool present
 bool busy
 bool fault
 bool release_ready
+bool grab_ready
 string detail

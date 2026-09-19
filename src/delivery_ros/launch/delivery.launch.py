@@ -9,14 +9,20 @@ import os
 def generate_launch_description():
     config=os.path.join(get_package_share_directory('delivery_ros'),'config','pi4.yaml')
     cfg=LaunchConfiguration('config')
+    course=os.path.join(get_package_share_directory('delivery_ros'),'config','table_c.yaml')
     return LaunchDescription([
         DeclareLaunchArgument('config',default_value=config),
+        DeclareLaunchArgument('course',default_value=course),
         DeclareLaunchArgument('image_topic',default_value='/camera/image_raw'),
         DeclareLaunchArgument('camera_info_topic',default_value='/camera/camera_info'),
         Node(package='delivery_ros',executable='vision',name='vision',output='screen',parameters=[cfg],
              remappings=[('camera/image_raw',LaunchConfiguration('image_topic')),
                          ('camera/camera_info',LaunchConfiguration('camera_info_topic'))]),
+        Node(package='delivery_ros',executable='safety_monitor',name='safety_monitor',output='screen',parameters=[cfg]),
+        Node(package='delivery_ros',executable='vio_bridge',name='vio_bridge',output='screen',parameters=[cfg]),
         Node(package='delivery_ros',executable='px4_adapter',name='px4_adapter',output='screen',parameters=[cfg]),
         Node(package='delivery_ros',executable='payload',name='payload',output='screen',parameters=[cfg]),
         Node(package='delivery_ros',executable='mission',name='mission',output='screen',parameters=[cfg]),
+        Node(package='delivery_ros',executable='competition',name='competition',output='screen',
+             parameters=[cfg,{'course_file':LaunchConfiguration('course')}]),
     ])

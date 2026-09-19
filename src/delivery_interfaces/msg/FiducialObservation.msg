@@ -1,0 +1,10 @@
+uint8 UNKNOWN=0
+uint8 PACKAGE=1
+uint8 DELIVERY_PAD=2
+uint8 HOME_PAD=3
+std_msgs/Header header
+int32 marker_id
+uint8 role
+geometry_msgs/PoseWithCovariance pose
+float32 marker_size
+float32 reprojection_error

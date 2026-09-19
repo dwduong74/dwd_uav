@@ -33,7 +33,8 @@ class ActionTests(unittest.TestCase):
         self.marker_pub=self.node.create_publisher(LandingTarget,'/delivery/landing_target',1)
         self.vision_pub=self.node.create_publisher(Bool,'/delivery/vision_ready',1)
         self.intent=None
-        self.node.create_subscription(FlightIntent,'/delivery/flight_intent',lambda m:setattr(self,'intent',m),1)
+        # The plant stands in for safety_monitor + PX4 and therefore consumes raw intent.
+        self.node.create_subscription(FlightIntent,'/delivery/flight_intent_raw',lambda m:setattr(self,'intent',m),1)
         self.state=FlightState(healthy=True,landed=True,battery_remaining=.9,range_valid=True,
                                latitude=10.,longitude=106.,ref_latitude=10.,ref_longitude=106.,reference_timestamp=1)
         self.timer=self.node.create_timer(.05,self.plant)

@@ -11,7 +11,7 @@ char line[161], lastId[33];
 byte used=0;
 bool overflowed=false, busy=false, fault=false;
 unsigned long bootCounter, lastPing=0, started=0, lastReport=0;
-byte stage=0;
+byte stage=0, operation=0; // 1=grab, 2=release
 
 uint16_t crc16(const char *s) {
   uint16_t crc=0xffff;
@@ -42,17 +42,19 @@ void command(char *s) {
   if (crc16(s)!=(uint16_t)strtoul(star+1,NULL,16)) return;
   if (!strcmp(s,"PING")) { lastPing=millis(); return; }
   if (!strcmp(s,"STOP")) { stopMotion(); return; }
-  char counter[12], token[33], extra;
-  if (sscanf(s,"RELEASE %11s %32s %c",counter,token,&extra)!=2) return;
+  char verb[8], counter[12], token[33], extra;
+  if (sscanf(s,"%7s %11s %32s %c",verb,counter,token,&extra)!=3) return;
+  if (strcmp(verb,"GRAB") && strcmp(verb,"RELEASE")) return;
   if (strtoul(counter,NULL,10)!=bootCounter || strlen(token)!=32) return;
   for (byte i=0;i<32;i++) if (!strchr("0123456789abcdef",token[i])) return;
   if (!strcmp(token,lastId)) { report(); return; }
-  if (busy || fault || !present() || !closed() || millis()-lastPing>500) return;
+  bool grabbing=!strcmp(verb,"GRAB");
+  if (busy || fault || !closed() || (grabbing ? present() : !present()) || millis()-lastPing>500) return;
   // Persist before motion. A restart never automatically resumes an attempt.
   strcpy(lastId,token);
   for (byte i=0;i<33;i++) EEPROM.update(8+i,lastId[i]);
   claw.attach(SERVO_PIN); claw.write(OPEN_ANGLE);
-  busy=true; stage=1; started=millis();
+  busy=true; stage=1; operation=grabbing?1:2; started=millis();
 }
 
 void setup() {
@@ -82,10 +84,14 @@ void loop() {
   unsigned long now=millis();
   if (busy) {
     if (now-lastPing>500 || now-started>8000) stopMotion();
-    else if (stage==1 && !present() && now-started>500) {
+    else if (operation==2 && stage==1 && !present() && now-started>500) {
       claw.write(CLOSED_ANGLE); stage=2;
-    } else if (stage==2 && closed() && !present()) {
-      claw.detach(); busy=false;
+    } else if (operation==1 && stage==1 && now-started>800) {
+      claw.write(CLOSED_ANGLE); stage=2;
+    } else if (stage==2 && closed()) {
+      if ((operation==1 && present()) || (operation==2 && !present())) {
+        claw.detach(); busy=false;
+      }
     }
   }
   if (now-lastReport>=100) { report(); lastReport=now; }

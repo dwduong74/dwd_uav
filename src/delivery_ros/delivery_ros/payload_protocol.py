@@ -1,4 +1,4 @@
-"""Bounded ASCII frames with CRC-16/CCITT. No retry of a release command."""
+"""Bounded payload protocol. GRAB/RELEASE operations are UUID-idempotent."""
 from dataclasses import dataclass
 
 
@@ -47,15 +47,16 @@ def parse_state(raw):
 
 
 class SimBackend:
-    def __init__(self):
-        self.reading=Reading('1',True,True,False,False)
+    def __init__(self, present=True):
+        self.reading=Reading('1',True,present,False,False)
         self.started=None
+        self.operation=''
         self.count=0
 
     def update(self,now):
         if self.started is not None:
             if now-self.started>.5:
-                self.reading.present=False
+                self.reading.present=self.operation=='GRAB'
             if now-self.started>1.:
                 self.reading.closed,self.reading.busy=True,False
                 self.started=None
@@ -68,7 +69,17 @@ class SimBackend:
         if r.busy or r.fault or not r.closed or not r.present:
             raise ValueError('Payload not ready')
         r.last_id,r.busy,r.closed=token,True,False
-        self.started=now
+        self.started,self.operation=now,'RELEASE'
+        self.count+=1
+
+    def grab(self,token,now):
+        r=self.reading
+        if r.last_id==token:
+            return
+        if r.busy or r.fault or not r.closed or r.present:
+            raise ValueError('Payload not ready for grab')
+        r.last_id,r.busy,r.closed=token,True,False
+        self.started,self.operation=now,'GRAB'
         self.count+=1
 
     def stop(self):
@@ -103,6 +114,9 @@ class SerialBackend:
 
     def release(self,token,now):
         self.serial.write(frame('RELEASE '+self.reading.boot+' '+token))
+
+    def grab(self,token,now):
+        self.serial.write(frame('GRAB '+self.reading.boot+' '+token))
 
     def stop(self):
         self.serial.write(frame('STOP'))
